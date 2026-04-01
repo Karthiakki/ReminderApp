@@ -1,7 +1,7 @@
 package com.example.reminder
 
+import android.util.Patterns
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,7 +35,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.userProfileChangeRequest
 import kotlinx.coroutines.launch
 
 @Composable
@@ -54,6 +55,7 @@ fun Registerpage(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val auth = remember { FirebaseAuth.getInstance() }
 
     val gradientBrush = Brush.verticalGradient(
         colors = listOf(
@@ -244,13 +246,13 @@ fun Registerpage(
                                     }
                                 }
 
-                                fullName.length < 3 -> {
+                                fullName.trim().length < 3 -> {
                                     scope.launch {
                                         snackbarHostState.showSnackbar("Full name must be at least 3 characters")
                                     }
                                 }
 
-                                !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() -> {
+                                !Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches() -> {
                                     scope.launch {
                                         snackbarHostState.showSnackbar("Please enter a valid email")
                                     }
@@ -270,11 +272,47 @@ fun Registerpage(
 
                                 else -> {
                                     isLoading = true
-                                    scope.launch {
-                                        delay(1500)
-                                        isLoading = false
-                                        snackbarHostState.showSnackbar("Registration successful")
-                                        onRegisterSuccess()
+
+                                    auth.createUserWithEmailAndPassword(
+                                        email.trim(),
+                                        password
+                                    ).addOnCompleteListener { task ->
+
+                                        if (task.isSuccessful) {
+                                            val user = auth.currentUser
+
+                                            val profileUpdates = userProfileChangeRequest {
+                                                displayName = fullName.trim()
+                                            }
+
+                                            user?.updateProfile(profileUpdates)
+                                                ?.addOnCompleteListener { profileTask ->
+                                                    isLoading = false
+
+                                                    if (profileTask.isSuccessful) {
+                                                        scope.launch {
+                                                            snackbarHostState.showSnackbar("Registration successful")
+                                                        }
+                                                        onRegisterSuccess()
+                                                    } else {
+                                                        scope.launch {
+                                                            snackbarHostState.showSnackbar(
+                                                                profileTask.exception?.message
+                                                                    ?: "Account created, but name update failed"
+                                                            )
+                                                        }
+                                                        onRegisterSuccess()
+                                                    }
+                                                }
+                                        } else {
+                                            isLoading = false
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    task.exception?.message
+                                                        ?: "Registration failed"
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
