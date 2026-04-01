@@ -1,5 +1,6 @@
 package com.example.reminder
 
+import android.util.Patterns
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,17 +15,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
 @Composable
@@ -51,12 +52,13 @@ fun LoginPage(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val auth = remember { FirebaseAuth.getInstance() }
 
     val gradientBrush = Brush.verticalGradient(
         colors = listOf(
-            Color(0xFF6DD5FA), // light blue
-            Color(0xFF4FACFE), // soft blue
-            Color(0xFF43E97B)  // light green
+            Color(0xFF6DD5FA),
+            Color(0xFF4FACFE),
+            Color(0xFF43E97B)
         )
     )
 
@@ -189,8 +191,36 @@ fun LoginPage(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.clickable {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("Forgot password feature coming soon")
+                                when {
+                                    email.isBlank() -> {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Enter your email first")
+                                        }
+                                    }
+
+                                    !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Enter a valid email")
+                                        }
+                                    }
+
+                                    else -> {
+                                        auth.sendPasswordResetEmail(email)
+                                            .addOnCompleteListener { task ->
+                                                scope.launch {
+                                                    if (task.isSuccessful) {
+                                                        snackbarHostState.showSnackbar(
+                                                            "Password reset email sent"
+                                                        )
+                                                    } else {
+                                                        snackbarHostState.showSnackbar(
+                                                            task.exception?.message
+                                                                ?: "Failed to send reset email"
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                    }
                                 }
                             }
                         )
@@ -206,24 +236,40 @@ fun LoginPage(
                                         snackbarHostState.showSnackbar("Please fill all fields")
                                     }
                                 }
-                                !android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() -> {
+
+                                !Patterns.EMAIL_ADDRESS.matcher(email).matches() -> {
                                     scope.launch {
                                         snackbarHostState.showSnackbar("Please enter a valid email")
                                     }
                                 }
+
                                 password.length < 6 -> {
                                     scope.launch {
                                         snackbarHostState.showSnackbar("Password must be at least 6 characters")
                                     }
                                 }
+
                                 else -> {
                                     isLoading = true
-                                    scope.launch {
-                                        kotlinx.coroutines.delay(1500)
-                                        isLoading = false
-                                        snackbarHostState.showSnackbar("Login successful")
-                                        onLoginSuccess()
-                                    }
+
+                                    auth.signInWithEmailAndPassword(email.trim(), password)
+                                        .addOnCompleteListener { task ->
+                                            isLoading = false
+
+                                            if (task.isSuccessful) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar("Login successful")
+                                                }
+                                                onLoginSuccess()
+                                            } else {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        task.exception?.message
+                                                            ?: "Login failed"
+                                                    )
+                                                }
+                                            }
+                                        }
                                 }
                             }
                         },
